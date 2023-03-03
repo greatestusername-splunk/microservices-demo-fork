@@ -31,7 +31,7 @@ spec:
       containers:
       - name: server
         image: paymentservice
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 50051
         env:
@@ -45,7 +45,7 @@ spec:
           # value: "http://zipkin.default:9411/api/v2/spans"
           value: "http://$(NODE_IP):9411/api/v2/spans"
         - name: API_TOKEN_FAILURE_RATE
-          value: "0.75"
+          value: "0.15"
         - name: SERIALIZATION_FAILURE_RATE
           value: "0.0"
         - name: SUCCESS_PAYMENT_SERVICE_DURATION_MILLIS

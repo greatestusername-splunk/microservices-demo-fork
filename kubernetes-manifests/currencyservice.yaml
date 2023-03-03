@@ -31,7 +31,7 @@ spec:
       containers:
       - name: server
         image: currencyservice
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - name: grpc
           containerPort: 7000

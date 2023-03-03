@@ -72,7 +72,7 @@ const SUCCESS_PAYMENT_SERVICE_DURATION_MILLIS = Number.parseInt(
   process.env['SUCCESS_PAYMENT_SERVICE_DURATION_MILLIS'] || 200
 );
 const ERROR_PAYMENT_SERVICE_DURATION_MILLIS = Number.parseInt(
-  process.env['ERROR_PAYMENT_SERVICE_DURATION_MILLIS'] || 1000
+  process.env['ERROR_PAYMENT_SERVICE_DURATION_MILLIS'] || 5000
 );
 
 /** Return random element from given array */
@@ -154,6 +154,10 @@ module.exports = async function charge(request) {
     .then(({ transaction_id, cardType, cardNumber, amount }) => {
       externalPaymentProcessorClientSpan.setAttributes({
         'http.status_code': '200',
+        'amount.currency_code': amount.currency_code,
+        'amount.units': amount.units,
+        'amount.nanos': amount.nanos,
+        'checkout-status': 'success',
       });
 
       logger.info(
@@ -161,18 +165,18 @@ module.exports = async function charge(request) {
           cardType,
           version: SUCCESS_VERSION,
           cardNumberEnding: cardNumber.substr(-4),
-          'amount.currency_code': amount.currency_code,
-          'amount.units': amount.units,
-          'amount.nanos': amount.nanos,
         },
         'Transaction processed'
       );
 
       return { transaction_id };
     })
-    .catch((err) => {
+    .catch(({ err, amount }) => {
       externalPaymentProcessorClientSpan.setAttributes({
         'http.status_code': err.code,
+        'amount.currency_code': amount.currency_code,
+        'amount.units': amount.units,
+        'checkout-status': 'failure',
       });
 
       if (err.code === 401) {
@@ -188,6 +192,9 @@ module.exports = async function charge(request) {
           {
             token: API_TOKEN_FAILURE_TOKEN,
             version: FAILURE_VERSION,
+            'amount.currency_code': amount.currency_code,
+            'amount.units': amount.units,
+            'amount.nanos': amount.nanos,
           },
           `Failed payment processing through ButtercupPayments: Invalid API Token (${API_TOKEN_FAILURE_TOKEN})`
         );
@@ -217,20 +224,24 @@ async function serializeRequestDataToProto() {
  */
 function buttercupPaymentsApiCharge(request, token) {
   return new Promise((resolve, reject) => {
-    // Check for invalid token
-    if (token === API_TOKEN_FAILURE_TOKEN) {
-      const timeoutMillis = randomInt(0, ERROR_PAYMENT_SERVICE_DURATION_MILLIS);
-      setTimeout(() => {
-        reject(new InvalidRequestError());
-      }, timeoutMillis);
-      return;
-    }
-
+      
     // Process card
     const { amount, credit_card: creditCard } = request;
     const cardNumber = creditCard.credit_card_number;
     const cardInfo = cardValidator(cardNumber);
     const { card_type: cardType, valid } = cardInfo.getCardDetails();
+
+
+    // Check for invalid token
+    if (token === API_TOKEN_FAILURE_TOKEN) {
+      // After 3 or more seconds, throw timeout error
+      const timeoutMillis = randomInt(3000, ERROR_PAYMENT_SERVICE_DURATION_MILLIS);
+
+      setTimeout(() => {
+        reject({ err: new RequestTimeoutError(), amount });
+      }, timeoutMillis);
+      return;
+    }
 
     if (!valid) {
       throw new InvalidCreditCard();
@@ -273,6 +284,13 @@ class InvalidRequestError extends Error {
   constructor(token) {
     super('Invalid request');
     this.code = 401; // Authorization error
+  }
+}
+
+class RequestTimeoutError extends Error {
+  constructor(token) {
+    super('Request Timeout');
+    this.code = 408; // Timeout error
   }
 }
 

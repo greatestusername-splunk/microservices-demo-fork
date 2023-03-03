@@ -31,7 +31,7 @@ spec:
       containers:
         - name: server
           image: adservice
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9555
           env:
